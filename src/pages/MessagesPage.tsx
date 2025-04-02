@@ -1,14 +1,13 @@
 
 import { useAuth } from "../contexts/AuthContext";
-import AuthForms from "../components/AuthForms";
 import Sidebar from "../components/Sidebar";
-import Feed from "../components/Feed";
 import Widgets from "../components/Widgets";
+import { Card, CardContent } from "@/components/ui/card";
+import { Mail } from "lucide-react";
 
-const Index = () => {
+const MessagesPage = () => {
   const { user, loading } = useAuth();
 
-  // If auth is still loading, show a minimal loading state
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -17,19 +16,6 @@ const Index = () => {
     );
   }
 
-  // If no user is logged in, show auth forms
-  if (!user) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-b from-gray-900 to-black">
-        <div className="max-w-md w-full">
-          <h1 className="text-4xl font-bold text-center mb-8 text-gradient">BancaX</h1>
-          <AuthForms />
-        </div>
-      </div>
-    );
-  }
-
-  // If user is logged in, show the app
   return (
     <div className="min-h-screen max-w-7xl mx-auto grid grid-cols-12 gap-4 px-4">
       <div className="hidden md:block md:col-span-3 lg:col-span-2">
@@ -37,9 +23,18 @@ const Index = () => {
       </div>
       <main className="col-span-12 md:col-span-9 lg:col-span-7 pt-4">
         <div className="mb-4">
-          <h1 className="text-2xl font-bold">Home</h1>
+          <h1 className="text-2xl font-bold">Messages</h1>
         </div>
-        <Feed />
+        
+        <Card className="glass-card">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <Mail className="h-12 w-12 text-muted-foreground mb-4" />
+            <h2 className="text-xl font-medium mb-2">Your inbox is empty</h2>
+            <p className="text-muted-foreground">
+              When you send or receive messages, they'll appear here
+            </p>
+          </CardContent>
+        </Card>
       </main>
       <div className="hidden lg:block lg:col-span-3 pt-4">
         <Widgets />
@@ -53,4 +48,4 @@ const Index = () => {
   );
 };
 
-export default Index;
+export default MessagesPage;

@@ -1,14 +1,16 @@
 
 import { useAuth } from "../contexts/AuthContext";
-import AuthForms from "../components/AuthForms";
 import Sidebar from "../components/Sidebar";
-import Feed from "../components/Feed";
+import ComposePost from "../components/ComposePost";
 import Widgets from "../components/Widgets";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { X } from "lucide-react";
 
-const Index = () => {
+const ComposePage = () => {
   const { user, loading } = useAuth();
+  const navigate = useNavigate();
 
-  // If auth is still loading, show a minimal loading state
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -17,29 +19,30 @@ const Index = () => {
     );
   }
 
-  // If no user is logged in, show auth forms
+  // If not logged in, redirect to home
   if (!user) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-b from-gray-900 to-black">
-        <div className="max-w-md w-full">
-          <h1 className="text-4xl font-bold text-center mb-8 text-gradient">BancaX</h1>
-          <AuthForms />
-        </div>
-      </div>
-    );
+    navigate("/");
+    return null;
   }
 
-  // If user is logged in, show the app
   return (
     <div className="min-h-screen max-w-7xl mx-auto grid grid-cols-12 gap-4 px-4">
       <div className="hidden md:block md:col-span-3 lg:col-span-2">
         <Sidebar />
       </div>
       <main className="col-span-12 md:col-span-9 lg:col-span-7 pt-4">
-        <div className="mb-4">
-          <h1 className="text-2xl font-bold">Home</h1>
+        <div className="flex items-center mb-4">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => navigate(-1)}
+            className="rounded-full mr-4"
+          >
+            <X className="h-5 w-5" />
+          </Button>
+          <h1 className="text-2xl font-bold">New Post</h1>
         </div>
-        <Feed />
+        <ComposePost onSuccess={() => navigate("/")} />
       </main>
       <div className="hidden lg:block lg:col-span-3 pt-4">
         <Widgets />
@@ -53,4 +56,4 @@ const Index = () => {
   );
 };
 
-export default Index;
+export default ComposePage;
