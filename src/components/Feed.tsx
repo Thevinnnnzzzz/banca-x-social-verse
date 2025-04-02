@@ -1,11 +1,12 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { getFeedPosts, Post } from "../services/api";
+import { getFeedPosts, Post, enableRealtimeForPosts } from "../services/api";
 import PostItem from "./PostItem";
 import ComposePost from "./ComposePost";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { supabase } from "../integrations/supabase/client";
 
 const Feed = () => {
   const [posts, setPosts] = useState<Post[]>([]);
@@ -20,6 +21,9 @@ const Feed = () => {
     try {
       const fetchedPosts = await getFeedPosts(user.id);
       setPosts(fetchedPosts);
+      
+      // Enable realtime for posts after fetching
+      await enableRealtimeForPosts();
     } catch (error) {
       console.error("Error fetching feed:", error);
       toast({
@@ -36,6 +40,40 @@ const Feed = () => {
     if (user) {
       fetchPosts();
     }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Subscribe to new posts from followed users
+    const channel = supabase
+      .channel('public:posts')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'posts'
+      }, async (payload) => {
+        // Check if the post is from a user that the current user follows
+        const fetchedPosts = await getFeedPosts(user.id);
+        const newPostExists = fetchedPosts.some(post => post.id === payload.new.id);
+        
+        if (newPostExists) {
+          // Find the full post with author details
+          const newPost = fetchedPosts.find(post => post.id === payload.new.id);
+          if (newPost) {
+            setPosts(prevPosts => [newPost, ...prevPosts]);
+            toast({
+              title: "New post",
+              description: `${newPost.author?.display_name || 'Someone you follow'} just posted`
+            });
+          }
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   const handlePostUpdate = (updatedPost: Post) => {

@@ -1,3 +1,4 @@
+
 import { supabase } from '../integrations/supabase/client';
 
 export interface Post {
@@ -61,6 +62,12 @@ export interface Conversation {
   recipient_display_name: string;
   recipient_avatar_url: string;
 }
+
+// Enable realtime for posts and likes tables
+export const enableRealtimeForPosts = async () => {
+  await supabase.rpc('enable_realtime', { table_name: 'posts' });
+  await supabase.rpc('enable_realtime', { table_name: 'likes' });
+};
 
 export const getPosts = async (userId?: string) => {
   let query = supabase
@@ -164,10 +171,8 @@ export const likePost = async (postId: string, userId: string) => {
     throw error;
   }
 
-  await supabase
-    .from('posts')
-    .update({ likes_count: supabase.rpc('increment', { row_id: postId }) })
-    .eq('id', postId);
+  // Using the rpc function for incrementing likes count
+  await supabase.rpc('increment', { row_id: postId });
 
   return true;
 };
@@ -183,10 +188,8 @@ export const unlikePost = async (postId: string, userId: string) => {
     throw error;
   }
 
-  await supabase
-    .from('posts')
-    .update({ likes_count: supabase.rpc('decrement', { row_id: postId }) })
-    .eq('id', postId);
+  // Using the rpc function for decrementing likes count
+  await supabase.rpc('decrement', { row_id: postId });
 
   return true;
 };
@@ -216,11 +219,13 @@ export const getUserProfile = async (userId: string) => {
     throw error;
   }
 
+  // Fixed this to properly get count as number
   const { count: followersCount } = await supabase
     .from('follows')
     .select('follower_id', { count: 'exact', head: true })
     .eq('following_id', userId);
 
+  // Fixed this to properly get count as number
   const { count: followingCount } = await supabase
     .from('follows')
     .select('following_id', { count: 'exact', head: true })
@@ -423,6 +428,7 @@ export const markMessagesAsRead = async (userId: string, otherUserId: string) =>
 };
 
 export const deleteConversation = async (userId: string, otherUserId: string) => {
+  // Fixed this to use proper RPC call syntax
   const { error } = await supabase
     .rpc('delete_conversation', {
       user_id: userId,

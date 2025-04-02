@@ -5,9 +5,10 @@ import Sidebar from "../components/Sidebar";
 import PostItem from "../components/PostItem";
 import Widgets from "../components/Widgets";
 import { Input } from "@/components/ui/input";
-import { getPosts, Post } from "../services/api";
+import { getPosts, Post, enableRealtimeForPosts } from "../services/api";
 import { Search, Loader2 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
+import { supabase } from "../integrations/supabase/client";
 
 const ExplorePage = () => {
   const [posts, setPosts] = useState<Post[]>([]);
@@ -20,6 +21,9 @@ const ExplorePage = () => {
     try {
       const fetchedPosts = await getPosts();
       setPosts(fetchedPosts);
+      
+      // Enable realtime for posts after fetching
+      await enableRealtimeForPosts();
     } catch (error) {
       console.error("Error fetching posts:", error);
       toast({
@@ -34,6 +38,30 @@ const ExplorePage = () => {
 
   useEffect(() => {
     fetchPosts();
+  }, []);
+
+  useEffect(() => {
+    // Subscribe to new posts
+    const channel = supabase
+      .channel('public:posts')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'posts'
+      }, async () => {
+        // Fetch all posts again to ensure we have author details
+        const fetchedPosts = await getPosts();
+        setPosts(fetchedPosts);
+        toast({
+          title: "New content",
+          description: "New posts are available"
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handlePostUpdate = (updatedPost: Post) => {

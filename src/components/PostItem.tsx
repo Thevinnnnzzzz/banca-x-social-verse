@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "../contexts/AuthContext";
 import { likePost, unlikePost, Post } from "../services/api";
 import { toast } from "@/components/ui/use-toast";
+import { supabase } from "../integrations/supabase/client";
 
 interface PostItemProps {
   post: Post;
@@ -22,28 +23,85 @@ const PostItem = ({ post, onPostUpdate }: PostItemProps) => {
   const [likesCount, setLikesCount] = useState(post.likes_count || 0);
   const [isLoading, setIsLoading] = useState(false);
 
+  useEffect(() => {
+    // Update local state when post prop changes (e.g., from realtime updates)
+    setIsLiked(post.is_liked || false);
+    setLikesCount(post.likes_count || 0);
+  }, [post.is_liked, post.likes_count]);
+
+  useEffect(() => {
+    // Subscribe to realtime likes updates
+    if (!post.id) return;
+
+    const channel = supabase
+      .channel('public:likes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'likes',
+        filter: `post_id=eq.${post.id}`,
+      }, (payload) => {
+        // Update likes count based on the event type
+        if (payload.eventType === 'INSERT') {
+          setLikesCount(prev => prev + 1);
+          // If the current user is the one who liked the post, update UI
+          if (user && payload.new.user_id === user.id) {
+            setIsLiked(true);
+          }
+        } else if (payload.eventType === 'DELETE') {
+          setLikesCount(prev => Math.max(0, prev - 1));
+          // If the current user is the one who unliked the post, update UI
+          if (user && payload.old.user_id === user.id) {
+            setIsLiked(false);
+          }
+        }
+      })
+      .subscribe();
+
+    // Also subscribe to direct post updates
+    const postChannel = supabase
+      .channel('public:posts')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'posts',
+        filter: `id=eq.${post.id}`,
+      }, (payload) => {
+        if (payload.new && onPostUpdate) {
+          // We need to preserve our post data structure
+          const updatedPost = {
+            ...post,
+            ...payload.new,
+          };
+          onPostUpdate(updatedPost);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      supabase.removeChannel(postChannel);
+    };
+  }, [post.id, user]);
+
   const handleLikeToggle = async () => {
-    if (!user) return;
+    if (!user) {
+      toast({
+        title: "Authentication required",
+        description: "Please sign in to like posts",
+        variant: "destructive"
+      });
+      return;
+    }
     
     setIsLoading(true);
     try {
       if (isLiked) {
         await unlikePost(post.id, user.id);
-        setLikesCount(prev => prev - 1);
-        setIsLiked(false);
+        // UI will update via the realtime subscription
       } else {
         await likePost(post.id, user.id);
-        setLikesCount(prev => prev + 1);
-        setIsLiked(true);
-      }
-      
-      // Update the post with new like status
-      if (onPostUpdate) {
-        onPostUpdate({
-          ...post,
-          is_liked: !isLiked,
-          likes_count: isLiked ? likesCount - 1 : likesCount + 1
-        });
+        // UI will update via the realtime subscription
       }
     } catch (error) {
       console.error("Error toggling like:", error);
@@ -52,6 +110,9 @@ const PostItem = ({ post, onPostUpdate }: PostItemProps) => {
         description: "Failed to like/unlike post",
         variant: "destructive"
       });
+      // Revert the local state in case of error
+      setIsLiked(prevIsLiked => !prevIsLiked);
+      setLikesCount(prevCount => isLiked ? prevCount + 1 : prevCount - 1);
     } finally {
       setIsLoading(false);
     }
