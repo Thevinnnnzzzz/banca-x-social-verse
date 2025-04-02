@@ -1,3 +1,4 @@
+
 import { supabase } from '../integrations/supabase/client';
 
 export interface Post {
@@ -99,6 +100,19 @@ export const getPosts = async (userId?: string) => {
 };
 
 export const getFeedPosts = async (userId: string) => {
+  // Get the list of users the current user follows
+  const { data: followingData } = await supabase
+    .from('follows')
+    .select('following_id')
+    .eq('follower_id', userId);
+  
+  const followingIds = followingData ? followingData.map(follow => follow.following_id) : [];
+
+  // Fetch posts from those users
+  if (followingIds.length === 0) {
+    return [];
+  }
+
   const { data, error } = await supabase
     .from('posts')
     .select(`
@@ -109,12 +123,7 @@ export const getFeedPosts = async (userId: string) => {
       likes_count,
       profiles:user_id (username, display_name, avatar_url)
     `)
-    .in('user_id', 
-      supabase
-        .from('follows')
-        .select('following_id')
-        .eq('follower_id', userId)
-    )
+    .in('user_id', followingIds)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -209,14 +218,16 @@ export const getUserProfile = async (userId: string) => {
     throw error;
   }
 
+  // Count followers
   const { count: followersCount } = await supabase
     .from('follows')
-    .select('follower_id', { count: 'exact' })
+    .select('follower_id', { count: 'exact', head: true })
     .eq('following_id', userId);
 
+  // Count following
   const { count: followingCount } = await supabase
     .from('follows')
-    .select('following_id', { count: 'exact' })
+    .select('following_id', { count: 'exact', head: true })
     .eq('follower_id', userId);
 
   return {
@@ -237,14 +248,16 @@ export const getUserProfileByUsername = async (username: string) => {
     throw error;
   }
 
+  // Count followers
   const { count: followersCount } = await supabase
     .from('follows')
-    .select('follower_id', { count: 'exact' })
+    .select('follower_id', { count: 'exact', head: true })
     .eq('following_id', data.id);
 
+  // Count following
   const { count: followingCount } = await supabase
     .from('follows')
-    .select('following_id', { count: 'exact' })
+    .select('following_id', { count: 'exact', head: true })
     .eq('follower_id', data.id);
 
   return {
@@ -326,7 +339,9 @@ export const searchUsers = async (query: string) => {
 };
 
 export const getConversations = async (userId: string) => {
+  // Use rpc to call the getConversations function
   const { data, error } = await supabase
+    // We need to cast here since TypeScript doesn't know about this view
     .from('conversations')
     .select('*')
     .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
@@ -336,11 +351,12 @@ export const getConversations = async (userId: string) => {
     throw error;
   }
 
-  return data as Conversation[];
+  return data as unknown as Conversation[];
 };
 
 export const getMessages = async (userId: string, otherUserId: string) => {
   const { data, error } = await supabase
+    // We need to cast here since TypeScript doesn't know about this table
     .from('messages')
     .select(`
       id,
@@ -359,11 +375,12 @@ export const getMessages = async (userId: string, otherUserId: string) => {
     throw error;
   }
 
-  return data as Message[];
+  return data as unknown as Message[];
 };
 
 export const sendMessage = async (senderId: string, recipientId: string, content: string) => {
   const { data, error } = await supabase
+    // We need to cast here since TypeScript doesn't know about this table
     .from('messages')
     .insert([{
       sender_id: senderId,
@@ -376,11 +393,12 @@ export const sendMessage = async (senderId: string, recipientId: string, content
     throw error;
   }
 
-  return data[0] as Message;
+  return data[0] as unknown as Message;
 };
 
 export const markMessagesAsRead = async (userId: string, otherUserId: string) => {
   const { error } = await supabase
+    // We need to cast here since TypeScript doesn't know about this table
     .from('messages')
     .update({ read: true })
     .eq('sender_id', otherUserId)

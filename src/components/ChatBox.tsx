@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -71,7 +70,7 @@ const ChatBox = ({ recipient }: ChatBoxProps) => {
             .single();
             
           if (data) {
-            setMessages(prev => [...prev, data as Message]);
+            setMessages(prev => [...prev, data as unknown as Message]);
             
             // Mark as read if current user is the recipient
             if (data.recipient_id === user.id) {
