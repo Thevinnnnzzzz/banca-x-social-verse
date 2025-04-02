@@ -1,4 +1,3 @@
-
 import { supabase } from '../integrations/supabase/client';
 
 export interface Post {
@@ -34,6 +33,7 @@ export interface Message {
   sender_id: string;
   recipient_id: string;
   read: boolean;
+  image_url?: string;
   sender?: {
     username: string;
     display_name: string;
@@ -100,7 +100,6 @@ export const getPosts = async (userId?: string) => {
 };
 
 export const getFeedPosts = async (userId: string) => {
-  // Get the list of users the current user follows
   const { data: followingData } = await supabase
     .from('follows')
     .select('following_id')
@@ -108,7 +107,6 @@ export const getFeedPosts = async (userId: string) => {
   
   const followingIds = followingData ? followingData.map(follow => follow.following_id) : [];
 
-  // Fetch posts from those users
   if (followingIds.length === 0) {
     return [];
   }
@@ -218,13 +216,11 @@ export const getUserProfile = async (userId: string) => {
     throw error;
   }
 
-  // Count followers
   const { count: followersCount } = await supabase
     .from('follows')
     .select('follower_id', { count: 'exact', head: true })
     .eq('following_id', userId);
 
-  // Count following
   const { count: followingCount } = await supabase
     .from('follows')
     .select('following_id', { count: 'exact', head: true })
@@ -248,13 +244,11 @@ export const getUserProfileByUsername = async (username: string) => {
     throw error;
   }
 
-  // Count followers
   const { count: followersCount } = await supabase
     .from('follows')
     .select('follower_id', { count: 'exact', head: true })
     .eq('following_id', data.id);
 
-  // Count following
   const { count: followingCount } = await supabase
     .from('follows')
     .select('following_id', { count: 'exact', head: true })
@@ -339,9 +333,7 @@ export const searchUsers = async (query: string) => {
 };
 
 export const getConversations = async (userId: string) => {
-  // Use rpc to call the getConversations function
   const { data, error } = await supabase
-    // We need to cast here since TypeScript doesn't know about this view
     .from('conversations')
     .select('*')
     .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
@@ -356,7 +348,6 @@ export const getConversations = async (userId: string) => {
 
 export const getMessages = async (userId: string, otherUserId: string) => {
   const { data, error } = await supabase
-    // We need to cast here since TypeScript doesn't know about this table
     .from('messages')
     .select(`
       id,
@@ -365,6 +356,7 @@ export const getMessages = async (userId: string, otherUserId: string) => {
       read,
       sender_id,
       recipient_id,
+      image_url,
       sender:sender_id (username, display_name, avatar_url),
       recipient:recipient_id (username, display_name, avatar_url)
     `)
@@ -378,14 +370,33 @@ export const getMessages = async (userId: string, otherUserId: string) => {
   return data as unknown as Message[];
 };
 
-export const sendMessage = async (senderId: string, recipientId: string, content: string) => {
+export const sendMessage = async (senderId: string, recipientId: string, content: string, imageFile?: File) => {
+  let imageUrl = null;
+  
+  if (imageFile) {
+    const filePath = `${senderId}/${Date.now()}_${imageFile.name}`;
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('message_images')
+      .upload(filePath, imageFile);
+      
+    if (uploadError) {
+      throw uploadError;
+    }
+    
+    const { data: urlData } = await supabase.storage
+      .from('message_images')
+      .getPublicUrl(filePath);
+      
+    imageUrl = urlData.publicUrl;
+  }
+  
   const { data, error } = await supabase
-    // We need to cast here since TypeScript doesn't know about this table
     .from('messages')
     .insert([{
       sender_id: senderId,
       recipient_id: recipientId,
-      content
+      content,
+      image_url: imageUrl
     }])
     .select();
 
@@ -398,7 +409,6 @@ export const sendMessage = async (senderId: string, recipientId: string, content
 
 export const markMessagesAsRead = async (userId: string, otherUserId: string) => {
   const { error } = await supabase
-    // We need to cast here since TypeScript doesn't know about this table
     .from('messages')
     .update({ read: true })
     .eq('sender_id', otherUserId)
@@ -409,5 +419,19 @@ export const markMessagesAsRead = async (userId: string, otherUserId: string) =>
     throw error;
   }
 
+  return true;
+};
+
+export const deleteConversation = async (userId: string, otherUserId: string) => {
+  const { error } = await supabase
+    .rpc('delete_conversation', {
+      user_id: userId,
+      other_user_id: otherUserId
+    });
+    
+  if (error) {
+    throw error;
+  }
+  
   return true;
 };

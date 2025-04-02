@@ -1,10 +1,11 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogHeader, DialogDescription } from "@/components/ui/dialog";
 import { Command, CommandInput, CommandEmpty, CommandGroup, CommandItem, CommandList } from "@/components/ui/command";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2 } from "lucide-react";
 import { searchUsers, UserProfile } from "../services/api";
+import { supabase } from "../integrations/supabase/client";
 
 interface NewMessageDialogProps {
   open: boolean;
@@ -16,24 +17,40 @@ const NewMessageDialog = ({ open, onOpenChange, onSelectUser }: NewMessageDialog
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(false);
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   
-  const handleSearch = async (value: string) => {
-    setSearchQuery(value);
+  // Debounce the search query to reduce API calls
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
     
-    if (!value.trim()) {
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+  
+  useEffect(() => {
+    if (!debouncedSearchQuery.trim()) {
       setSearchResults([]);
       return;
     }
     
-    setLoading(true);
-    try {
-      const results = await searchUsers(value);
-      setSearchResults(results);
-    } catch (error) {
-      console.error("Error searching users:", error);
-    } finally {
-      setLoading(false);
-    }
+    const performSearch = async () => {
+      setLoading(true);
+      try {
+        const results = await searchUsers(debouncedSearchQuery);
+        setSearchResults(results);
+      } catch (error) {
+        console.error("Error searching users:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    performSearch();
+  }, [debouncedSearchQuery]);
+  
+  const handleSearch = (value: string) => {
+    setSearchQuery(value);
   };
   
   const handleSelectUser = (user: UserProfile) => {

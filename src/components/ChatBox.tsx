@@ -1,13 +1,15 @@
-import { useState, useEffect, useRef } from "react";
+
+import { useState, useEffect, useRef, ChangeEvent } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Send, X, Image as ImageIcon } from "lucide-react";
 import { format } from 'date-fns';
 import { Message, UserProfile, sendMessage, getMessages, markMessagesAsRead } from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../integrations/supabase/client";
+import { toast } from "@/components/ui/use-toast";
 
 interface ChatBoxProps {
   recipient: UserProfile | null;
@@ -19,7 +21,10 @@ const ChatBox = ({ recipient }: ChatBoxProps) => {
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   useEffect(() => {
     if (!user || !recipient) return;
@@ -63,6 +68,7 @@ const ChatBox = ({ recipient }: ChatBoxProps) => {
               read,
               sender_id,
               recipient_id,
+              image_url,
               sender:sender_id (username, display_name, avatar_url),
               recipient:recipient_id (username, display_name, avatar_url)
             `)
@@ -102,9 +108,28 @@ const ChatBox = ({ recipient }: ChatBoxProps) => {
       )
       .subscribe();
       
+    // Subscribe to message deletions
+    const deleteChannel = supabase
+      .channel('public:messages:delete')
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+          filter: `or(and(sender_id=eq.${user.id},recipient_id=eq.${recipient.id}),and(sender_id=eq.${recipient.id},recipient_id=eq.${user.id}))`
+        },
+        () => {
+          // Refresh messages when a message is deleted
+          fetchMessages();
+        }
+      )
+      .subscribe();
+      
     return () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(readChannel);
+      supabase.removeChannel(deleteChannel);
     };
   }, [user, recipient]);
   
@@ -113,20 +138,72 @@ const ChatBox = ({ recipient }: ChatBoxProps) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
   
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // Check file size (limit to 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Images must be less than 5MB",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Check file type
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Invalid file type",
+        description: "Only image files are allowed",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setImageFile(file);
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+  
+  const clearImageSelection = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+  
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!user || !recipient || !newMessage.trim()) return;
+    if (!user || !recipient || (!newMessage.trim() && !imageFile)) return;
     
     try {
       setSending(true);
-      await sendMessage(user.id, recipient.id, newMessage.trim());
+      await sendMessage(user.id, recipient.id, newMessage.trim(), imageFile || undefined);
       setNewMessage("");
+      clearImageSelection();
     } catch (error) {
       console.error("Error sending message:", error);
+      toast({
+        title: "Error",
+        description: "Failed to send message. Please try again.",
+        variant: "destructive"
+      });
     } finally {
       setSending(false);
     }
+  };
+  
+  const handleAttachImage = () => {
+    fileInputRef.current?.click();
   };
   
   if (!recipient) {
@@ -193,6 +270,16 @@ const ChatBox = ({ recipient }: ChatBoxProps) => {
                         }`}
                       >
                         {message.content}
+                        {message.image_url && (
+                          <div className="mt-2">
+                            <img 
+                              src={message.image_url} 
+                              alt="Message attachment" 
+                              className="max-w-full rounded-md max-h-64 object-contain"
+                              onLoad={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
+                            />
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center mt-1 space-x-2">
                         <span className="text-xs text-muted-foreground">
@@ -214,9 +301,48 @@ const ChatBox = ({ recipient }: ChatBoxProps) => {
         )}
       </ScrollArea>
       
+      {/* Image preview */}
+      {imagePreview && (
+        <div className="p-2 border-t border-white/10">
+          <div className="relative inline-block">
+            <img 
+              src={imagePreview} 
+              alt="Selected image" 
+              className="h-24 rounded-md object-contain"
+            />
+            <Button 
+              variant="destructive" 
+              size="icon" 
+              className="absolute -top-2 -right-2 h-5 w-5"
+              onClick={clearImageSelection}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+      )}
+      
       {/* Message input */}
       <form onSubmit={handleSendMessage} className="p-4 border-t border-white/10">
         <div className="flex gap-2">
+          <Button 
+            type="button" 
+            size="icon" 
+            variant="outline" 
+            className="bg-white/5"
+            onClick={handleAttachImage}
+          >
+            <ImageIcon className="h-4 w-4" />
+          </Button>
+          
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileChange} 
+            className="hidden" 
+            accept="image/*"
+          />
+          
           <Input
             className="bg-white/5"
             placeholder="Type a message..."
@@ -224,10 +350,11 @@ const ChatBox = ({ recipient }: ChatBoxProps) => {
             onChange={(e) => setNewMessage(e.target.value)}
             disabled={sending}
           />
+          
           <Button 
             type="submit" 
             size="icon" 
-            disabled={!newMessage.trim() || sending}
+            disabled={(!newMessage.trim() && !imageFile) || sending}
           >
             {sending ? (
               <Loader2 className="h-4 w-4 animate-spin" />

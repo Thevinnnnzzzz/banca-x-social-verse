@@ -30,8 +30,8 @@ const MessagesPage = () => {
         const fetchedConversations = await getConversations(user.id);
         setConversations(fetchedConversations);
 
-        // Select the first conversation if any exist
-        if (fetchedConversations.length > 0) {
+        // Select the first conversation if any exist and none is currently selected
+        if (fetchedConversations.length > 0 && !selectedConversationUserId) {
           const firstConv = fetchedConversations[0];
           const otherUserId = firstConv.sender_id === user.id 
             ? firstConv.recipient_id 
@@ -42,6 +42,10 @@ const MessagesPage = () => {
           // Fetch full user profile 
           const userProfile = await getUserProfile(otherUserId);
           setSelectedUser(userProfile);
+        } else if (fetchedConversations.length === 0) {
+          // Clear selection if no conversations exist
+          setSelectedConversationUserId(null);
+          setSelectedUser(null);
         }
       } catch (error) {
         console.error("Error fetching conversations:", error);
@@ -95,13 +99,39 @@ const MessagesPage = () => {
       )
       .subscribe();
 
+    // Subscribe to message deletions
+    const deleteChannel = supabase
+      .channel('public:messages:deletions')
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+          filter: `or(sender_id=eq.${user.id},recipient_id=eq.${user.id})`
+        },
+        async () => {
+          // Refresh conversations when messages are deleted
+          const fetchedConversations = await getConversations(user.id);
+          setConversations(fetchedConversations);
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(updateChannel);
+      supabase.removeChannel(deleteChannel);
     };
-  }, [user]);
+  }, [user, selectedConversationUserId]);
 
   const handleSelectConversation = async (userId: string) => {
+    if (!userId) {
+      setSelectedConversationUserId(null);
+      setSelectedUser(null);
+      return;
+    }
+    
     setSelectedConversationUserId(userId);
     try {
       const userProfile = await getUserProfile(userId);
