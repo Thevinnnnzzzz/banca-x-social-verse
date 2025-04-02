@@ -1,10 +1,5 @@
 
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import { supabase } from '../integrations/supabase/client';
 
 export interface Post {
   id: string;
@@ -42,7 +37,7 @@ export const getPosts = async (userId?: string) => {
       created_at,
       user_id,
       likes_count,
-      users:user_id (username, display_name, avatar_url)
+      profiles:user_id (username, display_name, avatar_url)
     `)
     .order('created_at', { ascending: false });
 
@@ -63,10 +58,10 @@ export const getPosts = async (userId?: string) => {
     created_at: post.created_at,
     user_id: post.user_id,
     likes_count: post.likes_count,
-    author: post.users ? {
-      username: post.users.username,
-      display_name: post.users.display_name,
-      avatar_url: post.users.avatar_url
+    author: post.profiles ? {
+      username: post.profiles.username,
+      display_name: post.profiles.display_name,
+      avatar_url: post.profiles.avatar_url
     } : undefined
   }));
 };
@@ -81,15 +76,14 @@ export const getFeedPosts = async (userId: string) => {
       created_at,
       user_id,
       likes_count,
-      users:user_id (username, display_name, avatar_url)
+      profiles:user_id (username, display_name, avatar_url)
     `)
-    .in('user_id', [
-      // Subquery to get users that the current user follows
+    .in('user_id', 
       supabase
         .from('follows')
         .select('following_id')
         .eq('follower_id', userId)
-    ])
+    )
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -103,10 +97,10 @@ export const getFeedPosts = async (userId: string) => {
     created_at: post.created_at,
     user_id: post.user_id,
     likes_count: post.likes_count,
-    author: post.users ? {
-      username: post.users.username,
-      display_name: post.users.display_name,
-      avatar_url: post.users.avatar_url
+    author: post.profiles ? {
+      username: post.profiles.username,
+      display_name: post.profiles.display_name,
+      avatar_url: post.profiles.avatar_url
     } : undefined
   }));
 };
