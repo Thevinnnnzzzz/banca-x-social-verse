@@ -1,4 +1,3 @@
-
 import { supabase } from '../integrations/supabase/client';
 
 export interface Post {
@@ -27,7 +26,41 @@ export interface UserProfile {
   is_following?: boolean;
 }
 
-// Posts API
+export interface Message {
+  id: string;
+  content: string;
+  created_at: string;
+  sender_id: string;
+  recipient_id: string;
+  read: boolean;
+  sender?: {
+    username: string;
+    display_name: string;
+    avatar_url: string;
+  };
+  recipient?: {
+    username: string;
+    display_name: string;
+    avatar_url: string;
+  };
+}
+
+export interface Conversation {
+  id: string;
+  conversation_id: string;
+  content: string;
+  created_at: string;
+  read: boolean;
+  sender_id: string;
+  sender_username: string;
+  sender_display_name: string;
+  sender_avatar_url: string;
+  recipient_id: string;
+  recipient_username: string;
+  recipient_display_name: string;
+  recipient_avatar_url: string;
+}
+
 export const getPosts = async (userId?: string) => {
   let query = supabase
     .from('posts')
@@ -51,7 +84,6 @@ export const getPosts = async (userId?: string) => {
     throw error;
   }
 
-  // Reshape the data to match our Post interface
   return data.map((post: any): Post => ({
     id: post.id,
     content: post.content,
@@ -67,7 +99,6 @@ export const getPosts = async (userId?: string) => {
 };
 
 export const getFeedPosts = async (userId: string) => {
-  // Get posts from users that the current user follows
   const { data, error } = await supabase
     .from('posts')
     .select(`
@@ -90,7 +121,6 @@ export const getFeedPosts = async (userId: string) => {
     throw error;
   }
 
-  // Reshape the data
   return data.map((post: any): Post => ({
     id: post.id,
     content: post.content,
@@ -127,7 +157,6 @@ export const likePost = async (postId: string, userId: string) => {
     throw error;
   }
 
-  // Increment the likes_count in the posts table
   await supabase
     .from('posts')
     .update({ likes_count: supabase.rpc('increment', { row_id: postId }) })
@@ -147,7 +176,6 @@ export const unlikePost = async (postId: string, userId: string) => {
     throw error;
   }
 
-  // Decrement the likes_count in the posts table
   await supabase
     .from('posts')
     .update({ likes_count: supabase.rpc('decrement', { row_id: postId }) })
@@ -170,7 +198,6 @@ export const isPostLiked = async (postId: string, userId: string) => {
   return data.length > 0;
 };
 
-// User Profiles API
 export const getUserProfile = async (userId: string) => {
   const { data, error } = await supabase
     .from('profiles')
@@ -182,7 +209,6 @@ export const getUserProfile = async (userId: string) => {
     throw error;
   }
 
-  // Get follower and following counts
   const { count: followersCount } = await supabase
     .from('follows')
     .select('follower_id', { count: 'exact' })
@@ -211,7 +237,6 @@ export const getUserProfileByUsername = async (username: string) => {
     throw error;
   }
 
-  // Get follower and following counts
   const { count: followersCount } = await supabase
     .from('follows')
     .select('follower_id', { count: 'exact' })
@@ -246,7 +271,6 @@ export const updateUserProfile = async (
   return data[0];
 };
 
-// Follow System API
 export const followUser = async (followerId: string, followingId: string) => {
   const { error } = await supabase
     .from('follows')
@@ -287,7 +311,6 @@ export const isFollowing = async (followerId: string, followingId: string) => {
   return data.length > 0;
 };
 
-// Search API
 export const searchUsers = async (query: string) => {
   const { data, error } = await supabase
     .from('profiles')
@@ -300,4 +323,73 @@ export const searchUsers = async (query: string) => {
   }
 
   return data as UserProfile[];
+};
+
+export const getConversations = async (userId: string) => {
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Conversation[];
+};
+
+export const getMessages = async (userId: string, otherUserId: string) => {
+  const { data, error } = await supabase
+    .from('messages')
+    .select(`
+      id,
+      content,
+      created_at,
+      read,
+      sender_id,
+      recipient_id,
+      sender:sender_id (username, display_name, avatar_url),
+      recipient:recipient_id (username, display_name, avatar_url)
+    `)
+    .or(`and(sender_id.eq.${userId},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${userId})`)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Message[];
+};
+
+export const sendMessage = async (senderId: string, recipientId: string, content: string) => {
+  const { data, error } = await supabase
+    .from('messages')
+    .insert([{
+      sender_id: senderId,
+      recipient_id: recipientId,
+      content
+    }])
+    .select();
+
+  if (error) {
+    throw error;
+  }
+
+  return data[0] as Message;
+};
+
+export const markMessagesAsRead = async (userId: string, otherUserId: string) => {
+  const { error } = await supabase
+    .from('messages')
+    .update({ read: true })
+    .eq('sender_id', otherUserId)
+    .eq('recipient_id', userId)
+    .eq('read', false);
+
+  if (error) {
+    throw error;
+  }
+
+  return true;
 };
